@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>折れ線の長さくらべ（自動/手動・ランダム問題・答え合わせ付）</title>
+<style>
+  :root{
+    --ink:#111827; --brand:#2563eb; --paper:#fff;
+    --A:#e11d48; --B:#2563eb;
+    --outline:#5b4635; --needle:#ef4444; --pencil:#8fd3f4; --metal:#d1d5db;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#f8fafc;color:var(--ink);
+       font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif}
+  header{padding:10px 14px;background:#fff;border-bottom:1px solid #e5e7eb}
+  main{max-width:900px;margin:0 auto;padding:14px;display:grid;grid-template-columns:560px 1fr;gap:16px}
+  .panel{background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+  .panel h2{font-size:15px;margin:0;padding:10px 12px;border-bottom:1px solid #e5e7eb}
+  .panel .content{padding:12px}
+  button{border:1px solid #cbd5e1;background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:14px}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  svg{width:100%;height:auto;display:block;background:var(--paper);border-radius:14px}
+  .row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:6px 0}
+  .hint{font-size:12px;color:#374151;margin-top:6px}
+  .toast{position:absolute;left:16px;top:12px;background:#000a;color:#fff;padding:8px 10px;border-radius:10px;font-size:13px;backdrop-filter:blur(3px);opacity:0;transition:.25s}
+  .toast.show{opacity:1}
+  .segDot{fill:#fff;stroke:var(--A);stroke-width:2}
+  .question{font-size:16px;margin:8px 0 4px 6px;color:#111}
+  .judgeBox{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .judgeBox label{display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600}
+  .badge{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;border:2px solid #9ca3af;color:#6b7280;font-weight:700}
+  .badge.ok{border-color:#10b981;color:#10b981}
+  .badge.ng{border-color:#ef4444;color:#ef4444}
+  .disabled{opacity:.5;pointer-events:none}
+</style>
+</head>
+<body>
+<header>
+  <strong>折れ線の長さくらべ</strong>（自動で理解 → 手動で実践）
+</header>
+
+<main>
+  <section class="panel" style="position:relative">
+    <h2>作図盤</h2>
+    <div class="content" style="position:relative">
+      <div class="question">㋐と㋑、どちらが長いでしょうか。</div>
+      <div id="toast" class="toast"></div>
+
+      <svg id="board" viewBox="0 0 520 500" xmlns="http://www.w3.org/2000/svg" aria-label="作図盤">
+        <defs>
+          <clipPath id="clipInner"><rect x="8" y="20" width="504" height="460"/></clipPath>
+
+          <!-- コンパス部品（原点＝針先） -->
+          <g id="NEEDLE_TIP_AT_ORIGIN">
+            <circle cx="0" cy="0" r="3.2" fill="var(--needle)"/>
+            <path d="M0,0 L62.5,-7 L62.5,7 Z" fill="var(--metal)"/>
+            <path d="M0,0 L62.5,-7 L62.5,7 Z" fill="none" stroke="var(--outline)" stroke-width="3"/>
+          </g>
+          <g id="HINGE_RING">
+            <circle cx="0" cy="0" r="12" fill="#a58a79" stroke="var(--outline)" stroke-width="3"/>
+            <circle cx="0" cy="0" r="4" fill="#fff" stroke="var(--outline)" stroke-width="2"/>
+          </g>
+          <g id="PENCIL_BASE_AT_ORIGIN">
+            <path d="M0,-10 L120,-10 L120,10 L0,10 Z" fill="var(--pencil)" stroke="var(--outline)" stroke-width="3"/>
+            <path d="M120,-10 L140,0 L120,10 Z" fill="var(--outline)"/>
+            <path d="M0,-10 L120,-10 L140,0 L120,10 L0,10 Z" fill="none" stroke="var(--outline)" stroke-width="3"/>
+          </g>
+        </defs>
+
+        <!-- 背景：㋐折れ線・㋑直線 -->
+        <g id="bg" clip-path="url(#clipInner)"></g>
+
+        <!-- ㋑の“短い印” -->
+        <g id="drawLayer" clip-path="url(#clipInner)"></g>
+
+        <!-- コンパス（原点＝針先） -->
+        <g id="compass" pointer-events="none" transform="translate(-100,-100)">
+          <g id="gPencil"><use href="#PENCIL_BASE_AT_ORIGIN"/></g>
+          <g id="gNeedle"><use href="#NEEDLE_TIP_AT_ORIGIN"/></g>
+          <g id="gHinge"><use href="#HINGE_RING"/></g>
+        </g>
+      </svg>
+
+      <div class="hint" id="hint">モード：<b>自動</b>／手動。右の切替で変更できます。</div>
+
+      <!-- 答え合わせ -->
+      <div id="judge" class="judgeBox disabled" aria-disabled="true">
+        <span>どちらが長い？</span>
+        <label id="pickA"><input type="radio" name="ans" value="A" disabled> <span style="color:var(--A);font-size:18px;">㋐</span></label>
+        <label id="pickB"><input type="radio" name="ans" value="B" disabled> <span style="color:var(--B);font-size:18px;">㋑</span></label>
+        <span id="result" class="badge">？</span>
+      </div>
+
+    </div>
+  </section>
+
+  <aside class="panel">
+    <h2>操作</h2>
+    <div class="content">
+      <div class="row">
+        <label><input type="radio" name="mode" value="auto" checked> 自動モード</label>
+        <label><input type="radio" name="mode" value="manual"> 手動モード</label>
+      </div>
+      <div class="row">
+        <button id="btnStart" class="primary">スタート / 再生</button>
+        <button id="btnReset">リセット</button>
+        <button id="btnRandom">ランダム</button>
+        <label><input type="checkbox" id="chkShowCompass" checked> コンパス表示</label>
+      </div>
+      <div class="hint" id="manualHelp" style="display:none">
+        手動：①㋐の<b>始点</b>クリック → ②㋐の<b>終点</b>クリック → ③コンパスを<b>ドラッグして㋑へ</b> → ④<b>ドロップ</b>で印（ドロップ後は自動で“動きながら”描きます）。
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script>
+(function(){
+  const svg=document.getElementById('board');
+  const bg=document.getElementById('bg');
+  const layer=document.getElementById('drawLayer');
+  const toast=document.getElementById('toast');
+  const hint=document.getElementById('hint');
+  const manualHelp=document.getElementById('manualHelp');
+
+  // 答え合わせUI
+  const judgeBox=document.getElementById('judge');
+  const radios=document.getElementsByName('ans');
+  const resultBadge=document.getElementById('result');
+
+  function setJudgeEnabled(on){
+    judgeBox.classList.toggle('disabled', !on);
+    judgeBox.setAttribute('aria-disabled', String(!on));
+    radios.forEach(r=>r.disabled=!on);
+  }
+  function showResult(ok){
+    resultBadge.textContent = ok ? '◯' : '✕';
+    resultBadge.classList.toggle('ok', ok);
+    resultBadge.classList.toggle('ng', !ok);
+  }
+  function resetJudge(){
+    radios.forEach(r=>{ r.checked = false; r.disabled = true; });
+    resultBadge.textContent = '？';
+    resultBadge.classList.remove('ok','ng');
+    setJudgeEnabled(false);
+  }
+  resetJudge();
+  function showToast(msg, ms=1200){ toast.textContent=msg; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),ms); }
+
+  const M=14, CLIP={x:8,y:20,w:504,h:460};
+
+  /* 問題の描画（与えられた点で） */
+  function setProblem(Apts, Bline){
+    bg.innerHTML='';
+    // ㋐
+    const poly=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    poly.setAttribute('points',Apts.map(p=>`${p.x},${p.y}`).join(' '));
+    poly.setAttribute('fill','none'); poly.setAttribute('stroke','var(--A)'); poly.setAttribute('stroke-width','4');
+    bg.appendChild(poly);
+    Apts.forEach(p=>{
+      const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',p.x); c.setAttribute('cy',p.y); c.setAttribute('r',4.5); c.setAttribute('class','segDot'); c.setAttribute('opacity','.5');
+      bg.appendChild(c);
+    });
+    const tA=document.createElementNS('http://www.w3.org/2000/svg','text');
+    tA.setAttribute('x',M+22); tA.setAttribute('y',Apts[0].y-14); tA.setAttribute('font-size','16'); tA.setAttribute('fill','var(--A)'); tA.textContent='㋐';
+    bg.appendChild(tA);
+
+    // ㋑
+    const [B0,B1]=Bline;
+    const lineB=document.createElementNS('http://www.w3.org/2000/svg','line');
+    lineB.setAttribute('x1',B0.x); lineB.setAttribute('y1',B0.y); lineB.setAttribute('x2',B1.x); lineB.setAttribute('y2',B1.y);
+    lineB.setAttribute('stroke','var(--B)'); lineB.setAttribute('stroke-width','4');
+    bg.appendChild(lineB);
+    const tB=document.createElementNS('http://www.w3.org/2000/svg','text');
+    tB.setAttribute('x',M+22); tB.setAttribute('y',B0.y-10); tB.setAttribute('font-size','16'); tB.setAttribute('fill','var(--B)'); tB.textContent='㋑';
+    bg.appendChild(tB);
+
+    bg._Apts=Apts;
+    bg._Bline=Bline;
+
+    // 正解保持
+    const segs=[ [Apts[0],Apts[1]],[Apts[1],Apts[2]],[Apts[2],Apts[3]] ];
+    const totalA=segs.map(([p,q])=>Math.hypot(q.x-p.x, q.y-p.y)).reduce((s,v)=>s+v,0);
+    const lenB=Math.hypot(B1.x-B0.x, B1.y-B0.y);
+    bg._answer = (Math.abs(totalA-lenB)<1) ? 'equal' : (totalA > lenB ? 'A' : 'B');
+  }
+
+  /* 既定問題（サンプル） */
+  function drawBackground(){
+    const A0={x:M+60,  y:180};
+    const A1={x:M+200, y:140};
+    const A2={x:M+300, y:220};
+    const A3={x:M+400, y:140};
+    const yB=360, B0={x:M+60,y:yB}, B1={x:M+400,y:yB};
+    setProblem([A0,A1,A2,A3],[B0,B1]);
+  }
+  drawBackground();
+
+  /* ランダム問題の生成（㋑が長い場合も出るように調整） */
+  function rand(a,b){ return a + Math.random()*(b-a); }
+  function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+  function randomProblem(){
+    const left = CLIP.x+40, right = CLIP.x+CLIP.w-40;
+    const topY = CLIP.y+80, midY = CLIP.y+150, botY = CLIP.y+240;
+
+    // ㋐の4点（山→谷→山）
+    const x0 = left + rand(0,30);
+    const x1 = x0 + rand(90,130);
+    const x2 = x1 + rand(90,130);
+    const x3 = Math.min(right, x2 + rand(90,130));
+
+    const yBase = rand(midY-20, midY+20);
+    const yPeak = yBase - rand(40,70);
+    const yVal  = yBase + rand(40,70);
+    const yEnd  = yBase - rand(20,60);
+
+    const A0={x:x0, y: clamp(yBase, topY, botY)};
+    const A1={x:x1, y: clamp(yPeak, topY, botY)};
+    const A2={x:x2, y: clamp(yVal,  topY, botY)};
+    const A3={x:x3, y: clamp(yEnd,  topY, botY)};
+
+    // ㋐の総距離
+    const segs=[[A0,A1],[A1,A2],[A2,A3]];
+    const totalA=segs.map(([p,q])=>Math.hypot(q.x-p.x, q.y-p.y)).reduce((s,v)=>s+v,0);
+
+    // ㋑の長さ = totalA の 85%〜115% を目標に（±で半々くらいに）
+    const desired = clamp(rand(0.85,1.15)*totalA, 160, right-left-20);
+
+    // ㋑の配置：目標長さが入るよう左右を調整（中央寄せ）
+    const yB  = CLIP.y + CLIP.h - 120;
+    let B0x = (left+right-desired)/2 + rand(-20,20); // 軽くランダム
+    B0x = clamp(B0x, left, right - desired);
+    const B0={x:B0x, y:yB}, B1={x:B0x + desired, y:yB};
+
+    setProblem([A0,A1,A2,A3],[B0,B1]);
+    resetJudge();
+    layer.innerHTML='';
+    if(mode==='manual'){ prepareManualStart(); }
+    showToast('ランダム問題を作成しました',900);
+  }
+
+  /* コンパス外観 */
+  const compass=document.getElementById('compass'), gNeedle=document.getElementById('gNeedle'),
+        gPencil=document.getElementById('gPencil'), gHinge=document.getElementById('gHinge');
+  const chkShow=document.getElementById('chkShowCompass');
+  const HP=62.5, LP=140;
+
+  function setCompassVisible(v){ compass.style.display=v?'block':'none'; }
+  chkShow.addEventListener('change',()=>setCompassVisible(chkShow.checked));
+  setCompassVisible(chkShow.checked);
+
+  function setCompassPose(cx,cy,tx,ty){
+    const r=Math.hypot(tx-cx,ty-cy);
+    const angDeg=Math.atan2(ty-cy,tx-cx)*180/Math.PI;
+    compass.setAttribute('transform', `translate(${cx},${cy}) rotate(${angDeg})`);
+    gNeedle.setAttribute('transform', `translate(0,0)`);
+    gHinge .setAttribute('transform', `translate(${HP},0)`);
+    const len=Math.max(0, r-HP), sx=(len<=0?0.0001:len)/LP;
+    gPencil.setAttribute('transform', `translate(${HP},0) scale(${sx},1)`);
+  }
+
+  /* 印（短い円弧をアニメ） */
+  function arcPath(cx,cy,r,a0,a1){
+    while(a1<a0) a1+=Math.PI*2;
+    const large=(a1-a0)>Math.PI ? 1 : 0;
+    const x0=cx + r*Math.cos(a0), y0=cy + r*Math.sin(a0);
+    const x1=cx + r*Math.cos(a1), y1=cy + r*Math.sin(a1);
+    return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
+  }
+  function animateShortTick(cx,cy,r,theta=0.34,stroke='#111',w=2){
+    return new Promise(resolve=>{
+      const a0=-theta, a1=theta, dur=900, follow=0.35, t0=performance.now();
+      const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('fill','none'); path.setAttribute('stroke',stroke); path.setAttribute('stroke-width',w);
+      path.setAttribute('visibility','hidden'); layer.appendChild(path);
+      let phi=a0;
+      requestAnimationFrame(()=>{ path.setAttribute('visibility','visible');
+        (function step(now){
+          const p=Math.min(1,(now-t0)/dur), target=a0+(a1-a0)*p; phi+=(target-phi)*follow;
+          const x=cx + r*Math.cos(phi), y=cy + r*Math.sin(phi); setCompassPose(cx,cy,x,y);
+          path.setAttribute('d', arcPath(cx,cy,r,a0,phi));
+          if(p<1){ requestAnimationFrame(step); } else { setCompassPose(cx,cy,cx+r,cy); resolve(path); }
+        })(performance.now());
+      });
+    });
+  }
+
+  /* 自動モード用の中心移動 */
+  function moveCompassCenter(from, to, r, ms=750){
+    return new Promise(resolve=>{
+      const t0=performance.now();
+      (function step(now){
+        const p=Math.min(1,(now-t0)/ms);
+        const cx = from.x + (to.x - from.x)*p;
+        const cy = from.y + (to.y - from.y)*p;
+        setCompassPose(cx, cy, cx + r, cy);
+        if(p<1){ requestAnimationFrame(step); } else { resolve(); }
+      })(performance.now());
+    });
+  }
+
+  /* 自動モード */
+  async function demoAuto(){
+    layer.innerHTML='';
+    setCompassVisible(true);
+    resetJudge(); // 開始時リセット
+
+    const A=bg._Apts; const [B0,B1]=bg._Bline;
+    const segs=[ [A[0],A[1]],[A[1],A[2]],[A[2],A[3]] ];
+    const lengths=segs.map(([p,q])=>Math.hypot(q.x-p.x, q.y-p.y));
+    let cx=B0.x, cy=B0.y;
+
+    for(let i=0;i<segs.length;i++){
+      const [p,q]=segs[i]; const r=lengths[i];
+      showToast(`㋐ の ${i+1} 区間を はかる`, 900);
+      setCompassPose(p.x,p.y,q.x,q.y);
+      await new Promise(res=>setTimeout(res,700));
+      await moveCompassCenter({x:p.x,y:p.y}, {x:cx,y:cy}, r, 750);
+      showToast(`㋑ に印をつける`, 900);
+      await animateShortTick(cx, cy, r, 0.34, '#111', 2);
+      cx += r; await new Promise(res=>setTimeout(res,240));
+    }
+
+    // 答え合わせを有効化 & コンパスを隠す
+    setJudgeEnabled(true);
+    showToast('完了！ どちらが長いか答えてみよう',1400);
+    setTimeout(()=>setCompassVisible(false), 250);
+  }
+
+  /* 手動モード 状態 */
+  const modeEls=document.getElementsByName('mode');
+  let mode='auto';
+  let manual={stepIndex:0, phase:'pickStart', start:null,end:null, r:0, cx:null,cy:null, dragging:false};
+
+  function prepareManualStart(){
+    const [B0]=bg._Bline;
+    manual={stepIndex:0, phase:'pickStart', start:null,end:null, r:0, cx:B0.x, cy:B0.y, dragging:false};
+    setCompassVisible(true);
+    const initOpen = 62.5 + 110;
+    setCompassPose(manual.cx, manual.cy, manual.cx + initOpen, manual.cy);
+    showToast('㋐の1区間：始点をクリック',1200);
+  }
+
+  function setMode(m){
+    mode=m; layer.innerHTML='';
+    setCompassVisible(document.getElementById('chkShowCompass').checked);
+    resetJudge();
+
+    if(mode==='auto'){
+      manualHelp.style.display='none';
+      hint.innerHTML='モード：<b>自動</b>／手動。右の切替で変更できます。';
+      showToast('自動モードに切替',800);
+    }else{
+      manualHelp.style.display='block';
+      hint.innerHTML='モード：自動／<b>手動</b>。手順は右の説明を参照。';
+      prepareManualStart();
+    }
+  }
+  modeEls.forEach(r=>r.addEventListener('change',e=>{ if(e.target.checked) setMode(e.target.value); }));
+
+  /* クリックのスナップ（端点のみ許容） */
+  const SNAP_PT=16;
+  function nearestPoint(p, points){
+    let best=null, dmin=Infinity;
+    for(const q of points){ const d=Math.hypot(p.x-q.x, p.y-q.y); if(d<dmin){dmin=d; best=q;} }
+    return dmin<=SNAP_PT ? best : null;
+  }
+
+  /* SVG座標変換 */
+  function toSVG(evt){
+    const pt=svg.createSVGPoint(); pt.x=evt.clientX; pt.y=evt.clientY;
+    const ctm=svg.getScreenCTM(); return ctm?pt.matrixTransform(ctm.inverse()):{x:0,y:0};
+  }
+
+  /* 手動クリック処理 */
+  function onSVGClick(e){
+    if(mode!=='manual') return;
+    e.preventDefault();
+    const pt=toSVG(e);
+    const A=bg._Apts; const i=manual.stepIndex;
+
+    if(manual.phase==='pickStart'){
+      const n=nearestPoint(pt,[A[i]]);
+      if(!n){ showToast('端点の近くをクリックしてください',800); return; }
+      manual.start=n; manual.phase='pickEnd';
+      showToast('終点をクリック',800);
+      return;
+    }
+    if(manual.phase==='pickEnd'){
+      const n=nearestPoint(pt,[A[i+1]]);
+      if(!n){ showToast('終点の近くをクリックしてください',800); return; }
+      manual.end=n;
+      manual.r=Math.hypot(manual.end.x-manual.start.x, manual.end.y-manual.start.y);
+      setCompassPose(manual.start.x, manual.start.y, manual.end.x, manual.end.y);
+      manual.phase='dragToB';
+      showToast('コンパスを㋑へドラッグ＆ドロップ',1200);
+      return;
+    }
+  }
+  svg.addEventListener('click', onSVGClick);
+
+  /* 手動ドラッグ → ドロップでアニメ描画 */
+  svg.addEventListener('mousedown',e=>{
+    if(mode!=='manual' || manual.phase!=='dragToB') return;
+    manual.dragging=true; e.preventDefault();
+  });
+  svg.addEventListener('mousemove',e=>{
+    if(mode!=='manual'||!manual.dragging) return;
+    const p=toSVG(e);
+    setCompassPose(p.x, p.y, p.x + manual.r, p.y);
+  });
+  svg.addEventListener('mouseup', async e=>{
+    if(mode!=='manual'||!manual.dragging) return;
+    manual.dragging=false; e.preventDefault();
+    const [B0,B1]=bg._Bline; const yB=B0.y;
+    const x = Math.max(B0.x, Math.min(B1.x, manual.cx));
+    setCompassPose(x, yB, x + manual.r, yB);
+    showToast('㋑ に印をつける', 900);
+    await animateShortTick(x, yB, manual.r, 0.34, '#111', 2);
+    manual.cx += manual.r; manual.stepIndex++;
+    if(manual.stepIndex>=3){
+      showToast('完了！ どちらが長いか答えてみよう',1400);
+      setJudgeEnabled(true);
+      setTimeout(()=>setCompassVisible(false), 250);
+    }else{
+      manual.phase='pickStart';
+      showToast(`次：㋐の ${manual.stepIndex+1} 区間 始点をクリック`,1200);
+    }
+  });
+  svg.addEventListener('mouseleave',()=>{ if(mode==='manual') manual.dragging=false; });
+
+  /* UI */
+  document.getElementById('btnStart').addEventListener('click',()=>{
+    if(mode==='auto') demoAuto();
+    else setMode('manual'); // 手動を初期化
+  });
+  document.getElementById('btnReset').addEventListener('click', ()=>{
+    layer.innerHTML='';
+    setCompassVisible(document.getElementById('chkShowCompass').checked);
+    drawBackground();
+    resetJudge();
+    if(mode==='manual'){ setMode('manual'); } else { setMode('auto'); }
+    showToast('リセットしました', 800);
+  });
+  document.getElementById('btnRandom').addEventListener('click', ()=>{
+    layer.innerHTML='';
+    setCompassVisible(document.getElementById('chkShowCompass').checked);
+    randomProblem();
+    if(mode==='manual'){ /* prepareManualStart は randomProblem 内で呼ぶ */ }
+  });
+
+  /* 答え合わせ：クリックでもラジオでもOK */
+  document.getElementById('pickA').addEventListener('click',()=>checkAnswer('A'));
+  document.getElementById('pickB').addEventListener('click',()=>checkAnswer('B'));
+  radios.forEach(r=>r.addEventListener('change',e=>checkAnswer(e.target.value)));
+  function checkAnswer(choice){
+    if (judgeBox.classList.contains('disabled')) return;
+    const ans = bg._answer;
+    const ok = (ans!=='equal') && (choice===ans);
+    showResult(ok);
+  }
+
+  // 初期状態
+  setJudgeEnabled(false);
+
+})();
+</script>
+</body>
+</html>
